@@ -1,5 +1,4 @@
 import java.util.concurrent.ConcurrentHashMap
-import jp.flowtumn.numpre._
 
 object HelloWorld {
     def str2NumpreData(data: String): Iterable[NumpreElement] = {
@@ -36,9 +35,9 @@ object HelloWorld {
     
    def main(args: Array[String]) {
     
-        //val init = "123\n000456\n789\n00304050\n295421\n\n\n321\n00000879"
-        val init = "0"
-        new NumpreResolve(
+        val init = "123\n000456\n789\n00304050\n295421\n\n\n321\n00000879"
+        
+        new NumpreResolver(
             info = new NumpreInfo {
                 override def width: Int = 9
                 override def height: Int = 9
