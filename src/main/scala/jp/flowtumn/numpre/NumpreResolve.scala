@@ -3,6 +3,23 @@ package jp.flowtumn.numpre
 import java.util.concurrent.atomic.AtomicReference
 import scala.annotation.tailrec
 
+trait SolverResult
+object SolverSuccess extends SolverResult
+object SolverNotFound extends SolverResult
+object SolverImpossible extends SolverResult
+object SolverInvalidParameter extends SolverResult
+object SolverFail extends SolverResult
+
+/**
+ * 解法スキャンの実行を持つtrait.
+ */
+trait NumpreStrategy {
+    /**
+     * 標準実装は、単純にそのマスに埋まるべき値を列挙する。
+     */
+    def scan(x: Int, y: Int, detail: NumpreDetail): Either[SolverResult, NumpreElementCandidate]
+}
+
 /**
  * Numpreの情報を持ったtrait.
  */
@@ -41,12 +58,52 @@ trait NumpreDetail extends NumpreInfo {
      * そのマスの値を取得。
      */
     def atValue(x: Int, y: Int): Int
+
+    /**
+     * Success or Impossibleを返します。
+     */
+    def getResult(strategy: NumpreStrategy): SolverResult = {
+        scanInternal(0, 0, 0, strategy)
+    }
+
+    @tailrec
+    private def scanInternal(x: Int, y: Int, candidate: Int, strategy: NumpreStrategy): SolverResult = {
+        var xx = x
+        var yy = y
+        var can = candidate
+        strategy.scan(x, y, this) match {
+            case Right(v) =>
+                //候補の数を加算
+                can = can + v.values.size
+
+                //次の座標へ
+                val f = (vv: Int, max: Int) => {
+                    if (vv + 1 <= max) {
+                        0
+                    } else {
+                        vv + 1
+                    }
+                }
+
+                xx = f(x, this.width)
+                yy = f(y, this.height)
+            case Left(r) =>
+                return r
+        }
+
+        if ((xx <= this.width - 1) && (yy <= this.width - 1)) {
+            if (0 == can) {
+                //解法済み。
+                SolverSuccess
+            } else {
+                //まだ解法は見つかっていない。
+                SolverNotFound
+            }
+        } else {
+            scanInternal(xx, yy, can, strategy)
+        }
+    }
 }
-
-trait SolverResult
-case class SolverSuccess extends SolverResult
-case class SolverFail extends SolverResult
-
 
 class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreElement]) {
     private val repository = new AtomicReference[NumpreRepository](OnMemoryRepositoryFactory.create(initData))
@@ -94,8 +151,8 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
                 println("")
             }
         )
-            
-        Right(new SolverSuccess)
+
+        Right(SolverSuccess)
     }
 
     /**
@@ -107,9 +164,9 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
         for (x <- 0 until detail.width) {
             for (y <- 0 until detail.height) {
                 scan(x, y, detail) match {
-                    case Some(v) =>
+                    case Right(v) =>
                         result.enqueue(v)
-                    case None =>
+                    case Left(e) =>
                         // Noneなら候補は無い。(このループでNoneが返却されるのはDetailの実装ミス)
                         result.enqueue(new NumpreElementCandidate(x = x, y = y, values = Iterable[Int]()))
                 }
@@ -118,13 +175,17 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
 
         result
     }
-    
-    def scan(x: Int, y: Int, detail: NumpreDetail): Option[NumpreElementCandidate] = {
+
+    /**
+     * 指定した座標から候補になる値全てを列挙する。更に解法が見つけられるのかも判断する。
+     */
+    def scan(x: Int, y: Int, detail: NumpreDetail): Either[SolverResult, NumpreElementCandidate] = {
         val size = detail.height
         val candidate = new scala.collection.mutable.Queue[Int]
         var temp: Array[Int] = Array.fill(size)(-1);
 
         if (0 <= x && x < size && 0 <= y && y < size) {
+            //この座標の値が空なら。
             if (-1 >= detail.atValue(x, y)) {
                 //縦ラインのスキャン
                 for (yy <- 0 until size) {
@@ -162,7 +223,7 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
                         count(temp, xx, yy, detail)
                     }
                 }
-                
+
                 //候補が洗い出せた！
                 for (i <- 0 until size) {
                     if (-1 >= temp(i)) {
@@ -170,14 +231,23 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
                         candidate.enqueue(i)
                     }
                 }
+
+                if (0 < candidate.size) {
+                    Right(NumpreElementCandidate(x, y, candidate))
+                } else {
+                    //候補が一つも無ければ、この問題の解法を見つけることは出来ない。
+                    Left(SolverImpossible)
+                }
+            } else {
+                //既に値は埋まっている。
+                Right(NumpreElementCandidate(x, y, Iterable[Int]()))
             }
-            Some(NumpreElementCandidate(x, y, candidate))
         } else {
             //x,yが不正値
-            None
+            Left(SolverInvalidParameter)
         }
     }
-    
+
     def count(info: Array[Int], x: Int, y: Int, detail: NumpreDetail) : Boolean = {
         val v = detail.atValue(x, y)
         if (0 <= v) {
@@ -187,71 +257,8 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
             false
         }
     }
-    
-    /**
-     * X, Yマスの候補を取得。
-     */
 
-    @tailrec
-    private def scanInternal(detail: NumpreDetail): Unit = {
-        val size = detail.height
-        
-        //全体をスキャン。
-        for (y <- 0 until size) {
-            for (x <- 0 until size) {
-                var temp = Array.ofDim[Int](size)
-                if (0 == detail.atValue(x, y)) {
-                    //縦ラインのスキャン
-                    for (yy <- 0 until size) {
-                        temp(detail.atValue(x, yy)) = temp(detail.atValue(yy, x)) + 1
-                    }
-                    //横ラインのスキャン
-                    for (xx <- 0 until size) {
-                        temp(detail.atValue(xx, y)) = temp(detail.atValue(y,xx)) + 1
-                    }
-                    //対角線も揃えるか？
-                    if (detail.diagonal) {
-                        //対角線も調べる。
-                        if (y == x) {
-                            for (i <- 0 until size) {
-                                temp(detail.atValue(i, i)) = temp(detail.atValue(i, i)) + 1
-                            }
-                        }
-
-                        //反対の対角線を調べる。
-                        if ((x + y) == (size + 1)) {
-                            for (i <- 0 until size) {
-                                temp(detail.atValue(size - i, i))
-                            }
-                        }
-                    }
-
-                    //リージョン位置を取得。
-                    val (rgnX, rgnY) = getRgn(x, y, detail)
-
-                    //リージョンを調べる。
-                    for (yy <- rgnY until rgnY + detail.rgnHeight) {
-                        for (xx <- rgnX until rgnX + detail.rgnWidth) {
-                            temp(detail.atValue(xx, yy)) = temp(detail.atValue(xx, yy)) + 1
-                        }
-                    }
-                    
-                    //候補が洗い出せた！
-                    for (i <- 0 until size) {
-                        if (0 == temp(i)) {
-                            
-                        }
-                    }
-                }
-            }
-        }
-        scanInternal(detail)
-    }
-    
     private def getRgn(x: Int, y: Int, detail: NumpreDetail) : (Int, Int) = {
         (x / detail.rgnWidth, y / detail.rgnHeight)
-    }
-    
-    private def solverInternal: Unit = {
     }
 }
