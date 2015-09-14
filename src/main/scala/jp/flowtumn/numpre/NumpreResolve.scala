@@ -1,28 +1,42 @@
 package jp.flowtumn.numpre
 
 import java.util.concurrent.atomic.AtomicReference
-
 import scala.annotation.tailrec
 
+/**
+ * 結果。
+ */
 trait SolverResult
 
+/**
+ * 解法成功。
+ */
 object SolverSuccess extends SolverResult
 
+/**
+ * まだ見つかっていない。
+ */
 object SolverNotFound extends SolverResult
 
+/**
+ * 不可能。
+ */
 object SolverImpossible extends SolverResult
 
+/**
+ * パラメーターが不正。
+ */
 object SolverInvalidParameter extends SolverResult
 
-object SolverFail extends SolverResult
+/**
+ * 失敗したが理由が不詳。
+ */
+object SolverFailUnknown extends SolverResult
 
 /**
  * 解法スキャンの実行を持つtrait.
  */
 trait NumpreStrategy {
-	/**
-	 * 標準実装は、単純にそのマスに埋まるべき値を列挙する。
-	 */
 	def scan(x: Int, y: Int, detail: NumpreDetail): Either[SolverResult, Option[NumpreElementCandidate]]
 }
 
@@ -57,7 +71,7 @@ trait NumpreInfo {
 }
 
 /**
- * Numpreの詳細の情報を持っているtrai.
+ * Numpreの詳細の情報を持っているtrait.
  */
 trait NumpreDetail extends NumpreInfo {
 	/**
@@ -148,25 +162,19 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
 
 		val detail = new NumpreDetail {
 			override def width: Int = info.width
-
 			override def height: Int = info.height
-
 			override def rgnWidth: Int = info.rgnWidth
-
 			override def rgnHeight: Int = info.rgnHeight
-
 			override def diagonal: Boolean = info.diagonal
-
 			override def erase(x: Int, y: Int): Unit = {
 				table(x)(y) = -1
 			}
 
 			override def putValue(numpreElement: NumpreElement): Unit = {
-				table(numpreElement.x)(numpreElement.y) = numpreElement.value + 1
+				table(numpreElement.x)(numpreElement.y) = numpreElement.value
 			}
 
 			override def atValue(x: Int, y: Int): Int = {
-				//0から数えるので
 				table(x)(y)
 			}
 		}
@@ -227,7 +235,7 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
 				}
 			}
 			case _ => {
-				Right(SolverFail)
+				Right(SolverFailUnknown)
 			}
 		}
 	}
@@ -312,7 +320,7 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
 					}
 
 					//反対の対角線を調べる。
-					if ((x + y) == (size + 1)) {
+					if (((x % size) + (y % size)) == size - 1) {
 						for (i <- 0 until size) {
 							count(temp, size - i - 1, i, detail)
 						}

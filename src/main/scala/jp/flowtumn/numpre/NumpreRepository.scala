@@ -40,12 +40,13 @@ object OnMemoryRepositoryFactory {
 			protected val history = scala.collection.mutable.HashMap[Long, Boolean]()
 
 			override def push(v: NumpreElement): Boolean = {
-				//todo: 同一データは排除すべき。
-				collect.push(v)
-
-				//追加した履歴に残す。
-				history(v.hash) = true
-				true
+				if (!isPushd(v)) {
+					//追加した履歴に残す。
+					history(v.hash) = true
+					true
+				} else {
+					false
+				}
 			}
 
 			override def pop: Option[NumpreElement] = {
