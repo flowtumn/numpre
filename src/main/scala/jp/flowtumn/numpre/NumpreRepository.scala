@@ -37,12 +37,13 @@ object OnMemoryRepositoryFactory {
 	def create(v: Iterable[NumpreElement]): NumpreRepository = {
 		val result = new NumpreRepository {
 			protected val collect = scala.collection.mutable.Stack[NumpreElement]()
-			protected val history = scala.collection.mutable.HashMap[Long, Boolean]()
+			protected val history = scala.collection.mutable.HashMap[NumpreElement, Boolean]()
 
 			override def push(v: NumpreElement): Boolean = {
 				if (!isPushd(v)) {
+					collect.push(v)
 					//追加した履歴に残す。
-					history(v.hash) = true
+					history(v) = true
 					true
 				} else {
 					false
@@ -70,9 +71,9 @@ object OnMemoryRepositoryFactory {
 			}
 
 			override def isPushd(v: NumpreElement): Boolean = {
-				history.get(v.hash) match {
+				history.get(v) match {
 					case Some(v) =>
-						v
+						true
 					case None =>
 						false
 				}

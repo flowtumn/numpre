@@ -5,9 +5,7 @@ package jp.flowtumn.numpre
  * 0からカウントしているため、0から扱うこと。
  */
 case class NumpreElement(val x: Int, val y: Int, val value: Int) {
-	def hash: Long = {
-		(x << 24) | (y << 16) | value
-	}
+	override def hashCode = (x << 24) | (y << 16) | value
 }
 
 /**

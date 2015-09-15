@@ -1,7 +1,6 @@
 package jp.flowtumn.numpre
 
 import java.util.concurrent.atomic.AtomicReference
-import scala.annotation.tailrec
 
 /**
  * 結果。
@@ -34,210 +33,113 @@ object SolverInvalidParameter extends SolverResult
 object SolverFailUnknown extends SolverResult
 
 /**
- * 解法スキャンの実行を持つtrait.
+ * Numpreの解法の実装class.
  */
-trait NumpreStrategy {
-	def scan(x: Int, y: Int, detail: NumpreDetail): Either[SolverResult, Option[NumpreElementCandidate]]
-}
-
-/**
- * Numpreの情報を持ったtrait.
- */
-trait NumpreInfo {
-	/**
-	 * 横幅。
-	 */
-	def width: Int
-
-	/**
-	 * 縦幅。
-	 */
-	def height: Int
-
-	/**
-	 * Rgnの横幅。
-	 */
-	def rgnWidth: Int
-
-	/**
-	 * Rgnの縦幅。
-	 */
-	def rgnHeight: Int
-
-	/**
-	 * 対角線。
-	 */
-	def diagonal: Boolean
-}
-
-/**
- * Numpreの詳細の情報を持っているtrait.
- */
-trait NumpreDetail extends NumpreInfo {
-	/**
-	 * 指定マスを消去。
-	 */
-	def erase(x: Int, y: Int): Unit
-
-	/**
-	 * 指定マスに値を設定。
-	 */
-	def putValue(numpreElement: NumpreElement): Unit
-
-	/**
-	 * そのマスの値を取得。
-	 */
-	def atValue(x: Int, y: Int): Int
-
-	/**
-	 * 現在の状態を取得します。
-	 */
-	def getResult(strategy: NumpreStrategy): SolverResult = {
-		scanInternal(0, 0, strategy)
-	}
-
-	@tailrec
-	private def scanInternal(x: Int, y: Int, strategy: NumpreStrategy, workTemp: Array[Int] = Array.fill(this.width)(0)): SolverResult = {
-		val size = this.width
-
-		//次の座標へ
-		val f = (xx: Int, yy: Int, max: Int) => {
-			if ((xx == max) && (yy == max)) {
-				(xx, yy)
-			} else {
-				if (xx + 1 >= max) {
-					(0, yy + 1)
-				} else {
-					(xx + 1, yy)
-				}
-			}
-		}
-
-		val (xx, yy) = f(x, y, size)
-
-		strategy.scan(x, y, this) match {
-			case Right(Some(v)) =>
-				//候補になった値は控えておく
-				v.values.foreach(each => workTemp(each) = workTemp(each) + 1)
-			case Right(e) =>
-				//候補が見つからない、今の値でカウント
-				workTemp(atValue(x, y)) = workTemp(atValue(x, y)) + 1
-			case Left(r) =>
-				//解法を得ることは不可能
-				return r
-		}
-
-		if ((xx >= size) || (yy >= size)) {
-			if (size == workTemp.filter(_ == size).toList.size) {
-				//解法済み。
-				SolverSuccess
-			} else {
-				//まだ解法は見つかっていない。
-				SolverNotFound
-			}
-		} else {
-			scanInternal(xx, yy, strategy, workTemp)
-		}
-	}
-}
-
-class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreElement]) extends NumpreStrategy {
+class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreElement]) extends NumpreStrategy with NumpreDetail {
 	private val repository = new AtomicReference[NumpreRepository](OnMemoryRepositoryFactory.create(initData))
 	private val table = Array.fill[Int](info.width, info.height)(-1)
 
-	def solver: Either[Exception, SolverResult] = {
-		// repositoryからtableを復元。
-		repository.get.toIterable.foreach(
-			each => {
-				table(each.x)(each.y) = each.value
-			}
-		)
+	override def rgnWidth: Int = info.rgnWidth
 
-		for (y <- 0 until info.width) {
-			for (x <- 0 until info.height) {
-				print(table(x)(y))
-			}
-			println
-		}
+	override def rgnHeight: Int = info.rgnHeight
 
-		val detail = new NumpreDetail {
-			override def width: Int = info.width
-			override def height: Int = info.height
-			override def rgnWidth: Int = info.rgnWidth
-			override def rgnHeight: Int = info.rgnHeight
-			override def diagonal: Boolean = info.diagonal
-			override def erase(x: Int, y: Int): Unit = {
-				table(x)(y) = -1
-			}
+	override def diagonal: Boolean = info.diagonal
 
-			override def putValue(numpreElement: NumpreElement): Unit = {
-				table(numpreElement.x)(numpreElement.y) = numpreElement.value
-			}
+	override def strategy: NumpreStrategy = this
 
-			override def atValue(x: Int, y: Int): Int = {
-				table(x)(y)
-			}
-		}
-
-		val datas = scanAll(detail)
-
-		datas.foreach(
-			each => {
-				val f = (v: Iterable[Int]) => {
-					v.foreach(
-						each => {
-							print(each + " ")
-						}
-					)
-				}
-				print("x:   " + each.x + "    y: " + each.y + "  values: ")
-				f(each.values)
-				println("")
-			}
-		)
-
-		s(detail, repository.get)
-		println(detail.getResult(this))
-		Right(SolverSuccess)
+	override def erase(x: Int, y: Int): Unit = {
+		table(y)(x) = -1
 	}
 
-	def s(detail: NumpreDetail, repository: NumpreRepository): Either[Exception, SolverResult] = {
-		detail.getResult(this) match {
-			case SolverSuccess => {
-				Right(SolverSuccess)
+	override def scan(x: Int, y: Int, detail: NumpreDetail): Either[SolverResult, Option[NumpreElementCandidate]] = NumpreResolve.scan(x, y, detail)
+
+	/**
+	 * デバッグ用出力。
+	 */
+	override def dump: Unit = {
+		for (y <- 0 until height) {
+			for (x <- 0 until width) {
+				print(atValue(x, y) + 1 + " ")
 			}
-			case SolverImpossible => {
-				//不可能。repositoryを元に消去する。
-				repository.pop match {
-					case Some(v) => {
-						detail.erase(v.x, v.y)
-						s(detail, repository)
-					}
-					case None => {
-						Left(new Exception("none."))
-					}
-				}
-			}
+			println()
+		}
+		println("---------------------------")
+	}
+
+	override def width: Int = info.width
+
+	override def height: Int = info.height
+
+	override def atValue(x: Int, y: Int): Int = {
+		table(y)(x)
+	}
+
+	override def putValue(numpreElement: NumpreElement): Unit = {
+		table(numpreElement.y)(numpreElement.x) = numpreElement.value
+	}
+
+	// repositoryからtableを復元。
+	repository.get.toIterable.foreach(
+		each => {
+			this.putValue(each)
+		}
+	)
+
+	/**
+	 * 解法を行います。
+	 */
+	def solver: Either[Exception, SolverResult] = {
+		solverInternal(
+			this,
+			repository.get
+		)
+	}
+
+	//@tailrec
+	def solverInternal(detail: NumpreDetail, repository: NumpreRepository): Either[Exception, SolverResult] = {
+		detail.getResult match {
+			case SolverSuccess =>
+				detail.dump
+				return Right(SolverSuccess)
+			case SolverImpossible =>
+
 			case SolverNotFound => {
-				val candidates = scanAll(detail).toList.sortWith((x, y) => x.values.size < y.values.size).filter(0 < _.values.size)
+				//候補を取得
+				val candidates = NumpreResolve.scanAll(detail).toList.sortWith((x, y) => x.values.size < y.values.size).filter(0 < _.values.size)
 
-				//todo: 候補値が一個しか無い場合、即埋めてしまった方が早い。
+				candidates.foreach(
+					each => {
+						each.values.foreach(
+							value => {
+								val element = NumpreElement(x = each.x, y = each.y, value = value)
+								//todo: 単純なpushの確認では網羅できない。
+								//if (true) {
+								if (!repository.isPushd(element)) {
+									//repositoryに記録を記す。
+									repository.push(element)
 
-				createNextNumpreElement(candidates, repository) match {
-					case Some(v) =>
-						detail.putValue(v)
-						//repositoryに記録する。
-						repository.push(v)
-						//再帰
-						s(detail, repository)
-					case None =>
-						Left(new Exception("None"))
-				}
-			}
-			case _ => {
-				Right(SolverFailUnknown)
+									detail.putValue(element)
+
+									//再帰
+									solverInternal(detail, repository) match {
+										case Right(v) =>
+											v match {
+												case SolverSuccess =>
+													return Right(SolverSuccess)
+												case _ =>
+													//
+													repository.pop
+													detail.erase(each.x, each.y)
+											}
+									}
+								}
+							}
+						)
+					}
+				)
 			}
 		}
+		Right(SolverImpossible)
 	}
 
 	/**
@@ -259,21 +161,27 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
 		None
 	}
 
-	def solverInternal(detail: NumpreDetail, repository: NumpreRepository): Either[Exception, SolverResult] = {
-		val datas = scanAll(detail)
+	def scanAll(): Iterable[NumpreElementCandidate] = NumpreResolve.scanAll(this)
 
-		val candidate = datas.toList.sortWith((x, y) => x.values.size < y.values.size).filter(0 < _.values.size)
-		Right(SolverSuccess)
-	}
+	def scan(x: Int, y: Int): Either[SolverResult, Option[NumpreElementCandidate]] = NumpreResolve.scan(x, y, this)
 
+	def count(refArray: Array[Int], x: Int, y: Int): Boolean = NumpreResolve.count(refArray, x, y, this)
+
+	def getRgn(x: Int, y: Int): (Int, Int) = NumpreResolve.getRgn(x, y, this)
+}
+
+/**
+ * todo: 現状の課題が解決されたら、整理する必要あり。
+ */
+object NumpreResolve {
 	/**
 	 * 全マスの候補を取得。
 	 */
 	def scanAll(detail: NumpreDetail): Iterable[NumpreElementCandidate] = {
 		val result = new scala.collection.mutable.Queue[NumpreElementCandidate]
 
-		for (x <- 0 until detail.width) {
-			for (y <- 0 until detail.height) {
+		for (y <- 0 until detail.height) {
+			for (x <- 0 until detail.width) {
 				scan(x, y, detail) match {
 					case Right(Some(v)) =>
 						result.enqueue(v)
@@ -380,7 +288,10 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
 		}
 	}
 
-	private def getRgn(x: Int, y: Int, detail: NumpreDetail): (Int, Int) = {
-		(x / detail.rgnWidth, y / detail.rgnHeight)
+	/**
+	 * リージョンの開始位置を返します。
+	 */
+	def getRgn(x: Int, y: Int, detail: NumpreDetail): (Int, Int) = {
+		(x / detail.rgnWidth * detail.rgnWidth, y / detail.rgnHeight * detail.rgnHeight)
 	}
 }
