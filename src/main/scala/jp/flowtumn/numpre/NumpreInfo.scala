@@ -89,7 +89,7 @@ trait NumpreDetail extends NumpreInfo {
 
 		strategy.scan(x, y, this) match {
 			case Right(Some(v)) =>
-				//
+			//
 			case Right(e) =>
 				//候補が見つからない、今の値でカウント。
 				workTemp(atValue(x, y)) = workTemp(atValue(x, y)) + 1

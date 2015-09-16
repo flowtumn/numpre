@@ -61,9 +61,8 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
 			for (x <- 0 until width) {
 				print(atValue(x, y) + 1 + " ")
 			}
-			println()
+			println
 		}
-		println("---------------------------")
 	}
 
 	override def width: Int = info.width
@@ -78,6 +77,11 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
 		table(numpreElement.y)(numpreElement.x) = numpreElement.value
 	}
 
+	/**
+	 * Repositoryを取得。
+	 */
+	def repo: NumpreRepository = repository.get
+
 	// repositoryからtableを復元。
 	repository.get.toIterable.foreach(
 		each => {
@@ -89,76 +93,48 @@ class NumpreResolve(private val info: NumpreInfo, val initData: Iterable[NumpreE
 	 * 解法を行います。
 	 */
 	def solver: Either[Exception, SolverResult] = {
-		solverInternal(
-			this,
-			repository.get
-		)
+		solverInternal(this, repo)
 	}
 
-	//@tailrec
 	def solverInternal(detail: NumpreDetail, repository: NumpreRepository): Either[Exception, SolverResult] = {
 		detail.getResult match {
 			case SolverSuccess =>
-				detail.dump
 				return Right(SolverSuccess)
 			case SolverImpossible =>
-
+				return Right(SolverImpossible)
 			case SolverNotFound => {
 				//候補を取得
-				val candidates = NumpreResolve.scanAll(detail).toList.sortWith((x, y) => x.values.size < y.values.size).filter(0 < _.values.size)
+				val base = NumpreResolve.scanAll(detail).toList.sortWith((x, y) => x.values.size < y.values.size).filter(0 < _.values.size).head
 
-				candidates.foreach(
+				base.values.foreach(
 					each => {
-						each.values.foreach(
-							value => {
-								val element = NumpreElement(x = each.x, y = each.y, value = value)
-								//todo: 単純なpushの確認では網羅できない。
-								//if (true) {
-								if (!repository.isPushd(element)) {
-									//repositoryに記録を記す。
-									repository.push(element)
+						val element = NumpreElement(x = base.x, y = base.y, value = each)
 
-									detail.putValue(element)
+						//repositoryに記録する。
+						repository.push(element)
+						detail.putValue(element)
 
-									//再帰
-									solverInternal(detail, repository) match {
-										case Right(v) =>
-											v match {
-												case SolverSuccess =>
-													return Right(SolverSuccess)
-												case _ =>
-													//
-													repository.pop
-													detail.erase(each.x, each.y)
-											}
-									}
+						//再帰
+						solverInternal(detail, repository) match {
+							case Right(v) =>
+								v match {
+									case SolverSuccess =>
+										return Right(SolverSuccess)
+									case _ =>
+										//repositoryから記録を消去
+										repository.pop
+
+										//該当箇所を消去
+										detail.erase(base.x, base.y)
 								}
-							}
-						)
+							case Left(e) =>
+								Left(e)
+						}
 					}
 				)
 			}
 		}
 		Right(SolverImpossible)
-	}
-
-	/**
-	 * Repositoryと候補を照らし合わせて、次の要素を作成する。
-	 */
-	def createNextNumpreElement(candidate: List[NumpreElementCandidate], repository: NumpreRepository): Option[NumpreElement] = {
-		candidate.foreach(
-			each => {
-				each.values.foreach(
-					value => {
-						val r = NumpreElement(x = each.x, y = each.y, value = value)
-						if (false == repository.isPushd(r)) {
-							return Some(r)
-						}
-					}
-				)
-			}
-		)
-		None
 	}
 
 	def scanAll(): Iterable[NumpreElementCandidate] = NumpreResolve.scanAll(this)
@@ -178,7 +154,7 @@ object NumpreResolve {
 	 * 全マスの候補を取得。
 	 */
 	def scanAll(detail: NumpreDetail): Iterable[NumpreElementCandidate] = {
-		val result = new scala.collection.mutable.Queue[NumpreElementCandidate]
+		val result = scala.collection.mutable.Queue[NumpreElementCandidate]()
 
 		for (y <- 0 until detail.height) {
 			for (x <- 0 until detail.width) {
@@ -186,10 +162,10 @@ object NumpreResolve {
 					case Right(Some(v)) =>
 						result.enqueue(v)
 					case Right(e) =>
-						result.enqueue(new NumpreElementCandidate(x = x, y = y, values = Vector[Int]()))
+						result.enqueue(NumpreElementCandidate(x = x, y = y, values = Vector[Int]()))
 					case Left(e) =>
 						// Noneなら候補は無い。(このループでNoneが返却されるのはDetailの実装ミス)
-						result.enqueue(new NumpreElementCandidate(x = x, y = y, values = Vector[Int]()))
+						result.enqueue(NumpreElementCandidate(x = x, y = y, values = Vector[Int]()))
 				}
 			}
 		}
@@ -202,8 +178,8 @@ object NumpreResolve {
 	 */
 	def scan(x: Int, y: Int, detail: NumpreDetail): Either[SolverResult, Option[NumpreElementCandidate]] = {
 		val size = detail.height
-		val candidate = new scala.collection.mutable.Queue[Int]
-		val temp: Array[Int] = Array.fill(size)(-1);
+		val candidate = scala.collection.mutable.Queue[Int]()
+		val temp: Array[Int] = Array.fill(size)(-1)
 
 		if (0 <= x && x < size && 0 <= y && y < size) {
 			//この座標の値が空なら。
